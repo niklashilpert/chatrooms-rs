@@ -9,22 +9,15 @@ fn main() {
     
     let args = env::args().collect::<Vec<String>>();
 
-
-    
-    let params = init::parse_arguments(args);
-
-    match params {
-        Some(p) => {
-            match p {
+    match init::parse_arguments(args) {
+        Some(params) => {
+            print_init_info(params);
+            match params {
                 InstanceParams::Server(rooms, port) => {
-                    println!("Server: {}", port);
-                    println!("Rooms: ");
-                    for room in rooms {
-                        println!("  - {}", room);
-                    }
+                    
                 },
                 InstanceParams::Client(username, address, port) => {
-                    println!("Connect to {}:{} as {}", address, port, username.unwrap_or(String::from("null")));
+                    
                 }
             }
         },
@@ -33,6 +26,21 @@ fn main() {
 
     println!();
 
+}
+
+fn print_init_info(params: InstanceParams) {
+    match params {
+        InstanceParams::Server(rooms, port) => {
+            println!("Server: {}", port);
+            println!("Rooms: ");
+            for room in rooms {
+                println!("  - {}", room);
+            }
+        },
+        InstanceParams::Client(username, address, port) => {
+            println!("Connect to {}:{} as {}", address, port, username.unwrap_or(String::from("null")));
+        }
+    }
 }
 
 
