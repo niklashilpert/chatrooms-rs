@@ -1,6 +1,6 @@
 pub enum InstanceParams {
-    Server(Vec<String>, i32),
-    Client(Option<String>, String, i32)
+    Server(Vec<String>, u16),
+    Client(String, String, u16)
 }
 
 
@@ -23,19 +23,19 @@ pub fn parse_arguments(mut args: Vec<String>) -> Option<InstanceParams> {
     
     // Returns Some((address, port)) if the "-c" option is set and has a value (-> client connection)
     if let Some((address, port)) = extract_connect_info(&mut args) {
-        let username = extract_username(&mut args);
-        
-        return if args.len() == 0 { Some(InstanceParams::Client(username, address, port)) } else { None };
+        if let Some(username) = extract_username(&mut args) {
+            return if args.len() == 0 { Some(InstanceParams::Client(username, address, port)) } else { None };
+        }
     }
 
     return None;
 }
 
-fn extract_server_port(args: &mut Vec<String>) -> Option<i32> {
-    return extract_value_after(args, "-s")?.parse::<i32>().ok();   
+fn extract_server_port(args: &mut Vec<String>) -> Option<u16> {
+    return extract_value_after(args, "-s")?.parse::<u16>().ok();   
 }
 
-fn extract_connect_info(args: &mut Vec<String>) -> Option<(String, i32)> {
+fn extract_connect_info(args: &mut Vec<String>) -> Option<(String, u16)> {
     let connect_info_string = extract_value_after(args, "-c")?;
     let connect_info_parts = connect_info_string.split(":").collect::<Vec<&str>>();
     
@@ -43,7 +43,7 @@ fn extract_connect_info(args: &mut Vec<String>) -> Option<(String, i32)> {
         return None;
     } 
 
-    let port = connect_info_parts[1].parse::<i32>().ok()?;
+    let port = connect_info_parts[1].parse::<u16>().ok()?;
     return Some((connect_info_parts[0].to_string(), port));
 }
 
@@ -56,12 +56,12 @@ fn extract_chatroom_names(args: &mut Vec<String>) -> Option<Vec<String>> {
     return Some(chatroom_names_string.split(",").map(|e| e.to_string()).collect::<Vec<String>>());
 }
 
-fn extract_value_after(args: &mut Vec<String>, opt: &str) -> Option<String> {
-    let opt_index = args.iter().position(|s| s.as_str() == opt)?;
-    let val = args.get(opt_index + 1).cloned()?;
-    if opt_index + 1 < args.len() {
-        args.remove(opt_index);
-        args.remove(opt_index);
+fn extract_value_after(args: &mut Vec<String>, arg: &str) -> Option<String> {
+    let arg_index = args.iter().position(|s| s.as_str() == arg)?;
+    let val = args.get(arg_index + 1).cloned()?;
+    if arg_index + 1 < args.len() {
+        args.remove(arg_index);
+        args.remove(arg_index);
     }
     return Some(val);
 }
