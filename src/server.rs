@@ -1,8 +1,6 @@
-use std::{net::TcpListener, sync::mpsc::{self, Receiver, Sender}, thread};
+use std::{io::BufReader, net::{TcpListener, TcpStream}, sync::mpsc::{self, Receiver, Sender}, thread};
 
-use crate::{connection, db::DbConn, packet::{Packet, PacketWithReturn, RoomListUpdateContext}, threadpool::ThreadPool};
-
-
+use crate::{db::DbConn, packet::{self, Packet, PacketWithReturn, RoomListUpdateContext}, threadpool::ThreadPool};
 
 
 pub fn start(port: u16) {
@@ -22,8 +20,8 @@ pub fn start(port: u16) {
             accept_pool.execute(move || {
                 let (out_send, out_recv): (Sender<Packet>, Receiver<Packet>) = mpsc::channel();    
                 let stream_clone = stream.try_clone().unwrap();
-                thread::spawn(move || connection::start_reading(stream_clone, in_send_clone, out_send));
-                thread::spawn(move || connection::start_writing(stream, out_recv));
+                thread::spawn(move || start_reading(stream_clone, in_send_clone, out_send));
+                thread::spawn(move || start_writing(stream, out_recv));
             });            
         }
     }
@@ -33,6 +31,8 @@ pub fn start(port: u16) {
 }
 
 
+
+/* SERVER THREAD */
 
 fn handle_server_interaction(in_recv: Receiver<PacketWithReturn>) {
     
@@ -65,4 +65,42 @@ fn handle_packet(pwr: PacketWithReturn) {
             let _ = pwr.return_sender.send(Packet::IllegalPacket);
         }
     }
+}
+
+
+
+/* CONNECTION THREADS */
+
+pub fn start_reading(stream: TcpStream, in_send: Sender<PacketWithReturn>, out_send: Sender<Packet>) {
+    println!("[I]: Reading thread started");
+
+    let mut reader = BufReader::new(&stream);
+
+    loop {
+        let packet = packet::read_packet(&mut reader);
+        println!("[I] Packet received");
+        
+        let is_termination_request = if let Packet::TerminateRequest = &packet { true } else { false };
+        
+        let _ = in_send.send(PacketWithReturn{ packet, return_sender: out_send.clone() });
+        
+        if is_termination_request {
+            break;
+        }
+    }
+
+    let _ = stream.shutdown(std::net::Shutdown::Read);
+    println!("[I] Reading thread stopped");
+}
+
+pub fn start_writing(mut stream: TcpStream, out_recv: Receiver<Packet>) {
+    println!("[O]: Writing thread started");
+
+    while let Ok(packet) = out_recv.recv() {
+        let _ = packet::write_packet(&mut stream, &packet);
+        println!("[O]: Packet sent");
+    }
+
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    println!("[O]: Writing thread stopped");
 }

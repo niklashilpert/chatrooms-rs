@@ -1,10 +1,9 @@
-mod init;
-mod server;
-mod client;
 mod threadpool;
+mod init;
 mod db;
 mod packet;
-mod connection;
+mod server;
+mod client;
 
 use std::env;
 use init::InstanceParams;
