@@ -3,6 +3,8 @@
 
 db.txt
 
+Cargo.lock
+
 *.dmb
 *.rsc
 *.int
