@@ -1,132 +1,68 @@
-/* Imports */
-use std::{
-    io::{
-        BufRead, 
-        BufReader, Read
-    }, net::{
-        TcpListener,
-        TcpStream
-    }, ptr::read, sync::mpsc::{
-        self, 
-        Receiver, Sender
-    }, time::SystemTime
-};
+use std::{net::TcpListener, sync::mpsc::{self, Receiver, Sender}, thread};
 
-use crate::{
-    shared::{MessagePacket, MESSAGE_CONTENT_PREFIX, MESSAGE_LENGTH_PREFIX, MESSAGE_PROTOCOL_LINE, MESSAGE_ROOM_PREFIX, MESSAGE_USERNAME_PREFIX}, 
-    threadpool::ThreadPool
-};
+use crate::{connection, db::DbConn, packet::{Packet, PacketWithReturn, RoomListUpdateContext}, threadpool::ThreadPool};
 
 
-pub struct Room {
-    name: String,
-    messages: Vec<Message>,
-}
 
-pub struct Message {
-    time: SystemTime,
-    user: String,
-    content: String,
-}
 
-/* Code */
-pub struct Server {
-    port: u16,
-    listener: TcpListener,
-    threadpool: ThreadPool,
-    receiver: Receiver<MessagePacket>,
-}
+pub fn start(port: u16) {
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
 
-impl Server {
-    pub fn start(port: u16, rooms: Vec<String>) {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
-        let threadpool = ThreadPool::new(4);
+    let accept_pool = ThreadPool::new(4);
 
-        let (sender, receiver) = mpsc::channel();
+    let (in_send, in_recv): (Sender<PacketWithReturn>, Receiver<PacketWithReturn>) = mpsc::channel();
+    
+    let server_handle = thread::spawn(move || handle_server_interaction(in_recv));
 
-        let server = Server {
-            listener,
-            port,
-            threadpool,
-            receiver,
-        };
-        
-        for connection_attempt in server.listener.incoming() {
-            if let Ok(stream) = connection_attempt {
-                let sender_clone = sender.clone();
-                server.threadpool.execute(move || handle_connection(stream, sender_clone));
-            }
+    for connection_attempt in listener.incoming() {
+        if let Ok(stream) = connection_attempt {
+
+            let in_send_clone = in_send.clone();
+
+            accept_pool.execute(move || {
+                let (out_send, out_recv): (Sender<Packet>, Receiver<Packet>) = mpsc::channel();    
+                let stream_clone = stream.try_clone().unwrap();
+                thread::spawn(move || connection::start_reading(stream_clone, in_send_clone, out_send));
+                thread::spawn(move || connection::start_writing(stream, out_recv));
+            });            
         }
     }
+
+    let _ = server_handle.join();
+
 }
 
 
 
-fn handle_connection(mut stream: TcpStream, sender: Sender<MessagePacket>) {
-    if let Some(packet) = read_message_packet_from(BufReader::new(&mut stream)) {
-        if let Ok(_) = sender.send(packet) {
-            println!("[Incoming Message] Forwarded to server");
-        } else {
-            println!("[Error] Could not forward message to the server");
+fn handle_server_interaction(in_recv: Receiver<PacketWithReturn>) {
+    
+    let handle_pool = ThreadPool::new(4);
+
+    loop {
+        match in_recv.recv() {
+            Ok(pwr) => handle_pool.execute(move || handle_packet(pwr)),
+            Err(_) => break,
         }
-    } else {
-        println!("[Error] Invalid connection attempt");
     }
-
+    println!("COMMUNICATION ERROR");
 }
 
-fn read_message_packet_from(mut reader: BufReader<&mut TcpStream>) -> Option<MessagePacket> {
-    let mut protocol_line = String::new();
-    reader.read_line(&mut protocol_line).ok()?;
-    protocol_line = protocol_line.replace("\n", "").trim().to_string();
-
-    println!("{protocol_line}");
-    println!("{MESSAGE_PROTOCOL_LINE}");
-
-    if protocol_line.trim() != MESSAGE_PROTOCOL_LINE.to_string() {
-        return None;
-    }
-
-    let username = get_next_item(&mut reader, MESSAGE_USERNAME_PREFIX)?;
-    println!("Username: {username}");
+fn handle_packet(pwr: PacketWithReturn) {
     
-    let room = get_next_item(&mut reader, MESSAGE_ROOM_PREFIX)?;
-    println!("Room: {room}");
-
-    let length_string = get_next_item(&mut reader, MESSAGE_LENGTH_PREFIX)?;
-    let length: usize = length_string.parse().ok()?;
-    
-    
-    let mut unused_content: Vec<u8> = vec![0; MESSAGE_CONTENT_PREFIX.len()];
-    reader.read_exact(&mut unused_content).ok()?;
-    
-    
-    let mut content: Vec<u8> = vec![0; length];
-    reader.read_exact(&mut content).ok()?;
-    let content: String = String::from_utf8(content).ok()?;
-
-    println!("[Incoming Message] {username} > {room}: \"{content}\"");
-
-    Some(MessagePacket {
-        username,
-        room,
-        content,
-    })
-
-}
-
-fn get_next_item(reader: &mut BufReader<&mut TcpStream>, prefix: &str) -> Option<String> {
-    let mut line = String::new();
-    println!("test1: {line}");
-    reader.read_line(&mut line).ok()?;
-    println!("test2: {line}");
-    line = line.replace("\n", "").trim().to_string();
-
-    println!("\"{line}\"");
-
-    return if line.starts_with(prefix) {
-        Some(line.chars().skip(prefix.len()).collect())    
-    } else {
-        None
+    match pwr.packet {
+        Packet::TerminateRequest => {},
+        Packet::Login(ctx) => {
+            
+        },
+        Packet::RoomListUpdateRequest => {
+            let mut db = DbConn::new();
+            let rooms = db.get_rooms();
+            let _ = pwr.return_sender.send(Packet::RoomListUpdate(RoomListUpdateContext { rooms }));
+        },
+        Packet::AddMessage(ctx) => {},
+        Packet::FullMessageUpdateRequest(ctx) => {},
+        _ => {
+            let _ = pwr.return_sender.send(Packet::IllegalPacket);
+        }
     }
 }

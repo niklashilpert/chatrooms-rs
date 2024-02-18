@@ -4,24 +4,21 @@ pub struct ThreadPool {
     sender: Sender<Job>
 }
 
-pub struct Worker {
-    id: usize,
-    thread: thread::JoinHandle<()>,
-}
-
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
 impl ThreadPool {
     pub fn new(size: usize) -> Self {
         assert!(size > 0);
 
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver): (Sender<Job>, Receiver<Job>) = mpsc::channel();
         let receiver = Arc::new(Mutex::new(receiver));
 
-        let mut workers: Vec<Worker> = Vec::with_capacity(4);
-        
         for id in 0..size {
-            Worker::new(id, receiver.clone());
+            let receiver = receiver.clone();
+            thread::spawn(move || loop {
+                let job = receiver.lock().unwrap().recv().unwrap();
+                job();
+            });
         }
 
         ThreadPool { sender }
@@ -33,13 +30,4 @@ impl ThreadPool {
     }
 }
 
-impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> Self {
-        let thread = thread::spawn(move || loop {
-            let job = receiver.lock().unwrap().recv().unwrap();
-            println!("Worker {id} is handling the request.");
-            job();
-        });
-        Worker { id, thread }
-    }
-}
+

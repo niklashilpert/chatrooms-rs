@@ -1,6 +1,6 @@
 pub enum InstanceParams {
-    Server(Vec<String>, u16),
-    Client(String, String, u16)
+    Server(u16),
+    Client((String, String), String, u16)
 }
 
 
@@ -15,16 +15,17 @@ pub fn parse_arguments(mut args: Vec<String>) -> Option<InstanceParams> {
 
     // Returns Some(port) if the "-s" option is set and has a value (-> server creation)
     if let Some(port) = extract_server_port(&mut args) {
-        let rooms = extract_chatroom_names(&mut args)?;
         
         // Makes sure that there are no other arguments left (as not to mix server creation and client connection in the same command)
-        return if args.len() == 0 { Some(InstanceParams::Server(rooms, port)) }else { None };
+        return if args.len() == 0 { Some(InstanceParams::Server(port)) }else { None };
     } 
     
     // Returns Some((address, port)) if the "-c" option is set and has a value (-> client connection)
     if let Some((address, port)) = extract_connect_info(&mut args) {
         if let Some(username) = extract_username(&mut args) {
-            return if args.len() == 0 { Some(InstanceParams::Client(username, address, port)) } else { None };
+            if let Some(password) = extract_password(&mut args) {
+                return if args.len() == 0 { Some(InstanceParams::Client((username, password), address, port)) } else { None };
+            }
         }
     }
 
@@ -51,9 +52,8 @@ fn extract_username(args: &mut Vec<String>) -> Option<String> {
     return extract_value_after(args, "-u");
 }
 
-fn extract_chatroom_names(args: &mut Vec<String>) -> Option<Vec<String>> {
-    let chatroom_names_string = extract_value_after(args, "-r")?;
-    return Some(chatroom_names_string.split(",").map(|e| e.to_string()).collect::<Vec<String>>());
+fn extract_password(args: &mut Vec<String>) -> Option<String> {
+    return extract_value_after(args, "-p");
 }
 
 fn extract_value_after(args: &mut Vec<String>, arg: &str) -> Option<String> {
