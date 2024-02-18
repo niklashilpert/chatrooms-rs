@@ -1,6 +1,8 @@
 /target
 .vscode
 
+db.txt
+
 *.dmb
 *.rsc
 *.int
