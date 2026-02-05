@@ -1,66 +1,97 @@
 mod threadpool;
-mod init;
 mod db;
 mod packet;
 mod server;
 mod client;
 
-use std::env;
-use init::InstanceParams;
+use clap::{arg, command, Args, Parser};
 
-use crate::db::get_db_credentials;
+#[derive(Parser)]
+#[command(name = "chatrooms-rs")]
+pub struct App {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
 
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+enum Command {
+    #[command(name = "server")]
+    Server(ServerArgs),
+    #[command(name = "client")]
+    Client(ClientArgs),
+}
+
+#[derive(Args)]
+struct ServerArgs {
+    #[arg(short, long)]
+    port: u16,
+}
+
+#[derive(Args)]
+struct ClientArgs {
+    /// Address of the server. Expected in the following format: <ip>:<port>
+    #[arg(short, long)]
+    address: String,
+
+    #[arg(short, long)]
+    user: String,
+
+    #[arg(short, long)]
+    password: String,
+}
 
 fn main() {
-    println!("{}, {}", get_db_credentials().0, get_db_credentials().1);
+    let app = App::parse();
 
-    println!();
-    
-    let args = env::args().collect::<Vec<String>>();
-
-    match init::parse_arguments(args) {
-        Some(params) => {
-            print_init_info(&params);
-            start_program(params);
+    match app.command {
+        Some(command) => match command {
+            Command::Client(args) => {
+                match split_address(args.address) {
+                    Ok((address, port)) => {
+                        client::start(args.user, args.password, address, port);
+                    },
+                    Err(code) => match code {
+                        0 => println!("The address is in the wrong format. Use --help for more info."),
+                        _ => println!("The given port is invalid."),
+                    },
+                    
+                }
+            },
+            Command::Server(args) => {
+                server::start(args.port)
+            },
         },
-        None => println!("No arguments passed")
-    }
-
-    println!();
-}
-
-
-fn start_program(params: InstanceParams) {
-    match params {
-        InstanceParams::Server(port) => {
-            start_server(port);
-        },
-        InstanceParams::Client((username, password), address, port) => {
-            start_client(username, password, address, port);
+        None => {
+            println!("none");
         },
     }
+
+
 }
 
-fn start_server(port: u16) {
-    server::start(port);
-}
+fn split_address(addr: String) -> Result<(String, u16), u8> {
+    let addr_parts: Vec<&str> = addr.split(":").collect();
+    if addr_parts.len() == 2 {
 
-fn start_client(username: String, password: String, address: String, port: u16) {
-    client::start_client(username, password, address, port);
-}
+        let ip = addr_parts[0].to_string();
+        let port = match addr_parts[1].parse::<u16>() {
+            Ok(port) => port,
+            Err(_) => {
+                println!("The given port is not valid.");
+                return Err(1);
+            }
+        };
 
-
-
-fn print_init_info(params: &InstanceParams) {
-    match params {
-        InstanceParams::Server(port) => {
-            println!("Server: {}", port);
-        },
-        InstanceParams::Client((username, password), address, port) => {
-            println!("Connect to {}:{} as {}:{}", address, port, username, password);
-        }
+        return Ok((ip, port));
+        
+    } else {
+        println!("The address is in the wrong format. Use --help for more info.");
+        return Err(0);
     }
 }
+
+
 
 
 

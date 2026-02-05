@@ -2,45 +2,37 @@ use std::{io::{BufRead, BufReader, Write}, net::TcpStream, sync::mpsc::Sender};
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{Room, User};
-
-
-#[derive(Serialize, Deserialize)]
-pub struct ClientMessageInfo {
-    pub message_id: i32,
-    pub message: String,
-    pub message_timestamp: String,
-    pub user: User,
-    pub room: Room,
-}
+use crate::db::{Message, Room, User};
 
 
 
-#[derive(Serialize, Deserialize)]
-pub struct LoginContext {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Metadata {
     pub username: String,
     pub password: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct AddMessageContext {
-    pub room: Room,
+    pub room_id: i32,
     pub message: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct SingleMessageUpdateContext {
-    pub message_info: ClientMessageInfo,
+    pub message: Message,
+    pub user: User,
+    pub room: Room,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct FullMessageUpdateRequestContext {
-    pub room_name: String,
+    pub room_id: i32,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct FullMessageUpdateContext {
-    pub message_infos: Vec<ClientMessageInfo>,
+    pub messages: Vec<Message>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -57,16 +49,20 @@ pub struct PacketWithReturn {
 
 #[derive(Serialize, Deserialize)]
 pub enum Packet {
+    RoomRequest(Metadata, i32),
+    UserRequest(Metadata, i32),
+
+    RoomReply(Option<Room>),
+    UserReply(Option<User>),
+
     TerminateRequest,
     IllegalPacket,
-    Login(LoginContext),
-    LoginAccept,
-    LoginDecline,
-    RoomListUpdateRequest,
+    InvalidUser,
+    RoomListUpdateRequest(Metadata),
     RoomListUpdate(RoomListUpdateContext),
-    FullMessageUpdateRequest(FullMessageUpdateRequestContext),
+    FullMessageUpdateRequest(Metadata, FullMessageUpdateRequestContext),
     FullMessageUpdate(FullMessageUpdateContext),
-    AddMessage(AddMessageContext),
+    AddMessage(Metadata, AddMessageContext),
     SingleMessageUpdate(SingleMessageUpdateContext),
 }
 
